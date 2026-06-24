@@ -24,6 +24,7 @@
     "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0",
     "socks-proxy-agent": "^10.1.0",
+    "undici": "^6.21.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
   },

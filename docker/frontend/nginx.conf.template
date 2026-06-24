@@ -14,9 +14,17 @@ server {
     gzip_min_length 256;
 
     # SPA: all unknown routes -> index.html (with base URL support)
-    location ${BASE_URL} {
+    # Use ^~ so this prefix wins over the regex location for *.js/*.css below,
+    # otherwise /admin/assets/*.js would fall back to root and 404.
+    location ^~ ${BASE_URL} {
         alias /usr/share/nginx/html/;
         try_files $uri $uri/ ${BASE_URL}index.html;
+
+        # static assets cache (nested so BASE_URL prefix is honored)
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+        }
     }
 
     # Backend API proxy
@@ -62,12 +70,6 @@ server {
     location @backend_down {
         default_type application/json;
         return 503 '{"error":{"code":"BACKEND_UNAVAILABLE","message":"Backend service is not ready yet. Please retry in a few seconds."}}';
-    }
-
-    # static assets cache
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 30d;
-        add_header Cache-Control "public, immutable";
     }
 
     # upload size limit (for Worker scripts, Pages bundles, R2 objects)

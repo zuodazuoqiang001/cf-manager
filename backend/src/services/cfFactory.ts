@@ -1,7 +1,7 @@
 import Cloudflare from 'cloudflare';
 import { Account } from '../models/account';
 import { decrypt } from './encryptionService';
-import { getHttpAgent } from './proxyService';
+import { getSdkFetch } from './proxyService';
 
 export function getAuthHeaders(account: Account): Record<string, string> {
   if (account.auth_type === 'token') {
@@ -14,9 +14,9 @@ export function getAuthHeaders(account: Account): Record<string, string> {
 }
 
 export function getCfClient(account: Account): Cloudflare {
-  const httpAgent = getHttpAgent();
-  const opts: Record<string, any> = {};
-  if (httpAgent) opts.httpAgent = httpAgent;
+  // 注入 fetch 实现：替换 SDK 内嵌的 node-fetch@2，避免 Node 22/24 的 "Premature close"。
+  // 代理（HTTP/HTTPS）通过 undici dispatcher 自动接入；SOCKS 走 node-fetch+agent 兜底。
+  const opts: Record<string, any> = { fetch: getSdkFetch() };
 
   if (account.auth_type === 'token') {
     if (!account.api_token) throw new Error(`Account ${account.id} is missing api_token`);
