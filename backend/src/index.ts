@@ -15,6 +15,7 @@ import storageRouter from './routes/storage';
 import tasksRouter from './routes/tasks';
 import openaiRouter from './routes/openai';
 import externalBrowserRenderRouter from './routes/externalBrowserRender';
+import apiKeysRouter from './routes/apiKeys';
 import { getQuotaSummary, syncUsageFromCloudflare } from './services/quotaTracker';
 import { getRecentLogs, getLogs, countLogs } from './models/auditLog';
 import { initScheduler } from './services/taskScheduler';
@@ -46,6 +47,7 @@ app.use('/api/browser-render', browserRenderRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/storage', storageRouter);
 app.use('/api/tasks', tasksRouter);
+app.use('/api/api-keys', apiKeysRouter);
 
 // External APIs — no responseWrapper, keep original format
 app.use('/v1', v1RequestLogger);

@@ -3,6 +3,7 @@ import { getActiveAccounts, getActiveAccountsByFeature, Account, AccountFeature,
 import { getCfClient } from './cfFactory';
 import { getAccountQuota, ResourceType } from './quotaTracker';
 import { getAiUsageToday } from './aiService';
+import { getQuotaByAccount } from '../models/quotaUsage';
 import { appLogger } from './logger';
 
 const ZONES_CACHE_TTL = 300; // 5 minutes
@@ -110,10 +111,33 @@ export async function selectBestAccount(resource: ResourceType): Promise<Account
   return best;
 }
 
+// 本地额度上限映射（与 quotaTracker.LIMITS 保持一致；这里独立写一份避免循环依赖）
+const RESOURCE_LIMIT_MAP: Record<ResourceType, number> = {
+  ai_neurons: AI_NEURON_LIMIT,
+  workers_requests: 100000,
+  browser_render_seconds: 600,
+};
+
+// 过滤掉本地已标记耗尽的账号（4006 之后 setQuota(LIMIT) 写下的硬标记，今日内不再轮询）
+function filterExhausted(accounts: Account[], resource: ResourceType): Account[] {
+  const today = new Date().toISOString().split('T')[0];
+  const limit = RESOURCE_LIMIT_MAP[resource];
+  return accounts.filter(account => {
+    const usage = getQuotaByAccount(account.id, resource, today);
+    return !usage || usage.count < limit;
+  });
+}
+
 export async function getAccountsByPriority(resource: ResourceType): Promise<Account[]> {
   const feature = RESOURCE_FEATURE_MAP[resource];
-  const accounts = feature ? getActiveAccountsByFeature(feature) : getActiveAccounts();
-  if (accounts.length === 0) return [];
+  const allAccounts = feature ? getActiveAccountsByFeature(feature) : getActiveAccounts();
+  if (allAccounts.length === 0) return [];
+
+  const accounts = filterExhausted(allAccounts, resource);
+  if (accounts.length === 0) {
+    appLogger.warn(`[Router] All ${allAccounts.length} accounts marked exhausted for ${resource} today`);
+    return [];
+  }
 
   if (resource === 'ai_neurons') {
     const usageResults = await Promise.all(
@@ -127,12 +151,14 @@ export async function getAccountsByPriority(resource: ResourceType): Promise<Acc
       })
     );
     return usageResults
+      .filter(r => r.remaining > 0)
       .sort((a, b) => b.remaining - a.remaining)
       .map(r => r.account);
   }
 
   return accounts
     .map(account => ({ account, remaining: getAccountQuota(account.id, resource).remaining }))
+    .filter(r => r.remaining > 0)
     .sort((a, b) => b.remaining - a.remaining)
     .map(r => r.account);
 }

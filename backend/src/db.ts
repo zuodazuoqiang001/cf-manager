@@ -74,6 +74,29 @@ export function initDb(): void {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT NOT NULL,
+      key_prefix      TEXT NOT NULL,
+      key_hash        TEXT NOT NULL UNIQUE,
+      default_model   TEXT,
+      is_active       INTEGER DEFAULT 1,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_used_at    DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS api_key_usage (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key_id      INTEGER NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      date            DATE NOT NULL,
+      account_id      INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+      model           TEXT NOT NULL,
+      requests        INTEGER DEFAULT 0,
+      total_tokens    INTEGER DEFAULT 0,
+      UNIQUE(api_key_id, date, account_id, model)
+    );
   `);
 
   const cols = db.prepare("PRAGMA table_info('accounts')").all() as { name: string }[];

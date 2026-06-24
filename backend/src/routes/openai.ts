@@ -4,10 +4,15 @@ import { getAvailableModels } from '../services/aiService';
 import { getAuthHeaders } from '../services/cfFactory';
 import { createAuditLog } from '../models/auditLog';
 import { setQuota } from '../models/quotaUsage';
+import { incrementApiKeyUsage } from '../models/apiKey';
+import { v1AuthMiddleware } from '../middleware/v1Auth';
 import { proxyFetch } from '../services/proxyService';
 import { appLogger } from '../services/logger';
 
 const router = Router();
+
+// 强制 API Key 鉴权：/v1/* 下的所有路由都走这里
+router.use(v1AuthMiddleware);
 
 function isNeuronLimitError(text: string): boolean {
   return text.includes('4006') || text.includes('daily free allocation') || text.includes('neuron limit');
@@ -29,10 +34,28 @@ router.get('/models', async (req: Request, res: Response, next: NextFunction) =>
 
 router.post('/chat/completions', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const apiKey = req.apiKey; // 由 v1AuthMiddleware 注入
+
+    // default_model 兜底：客户端未传 model 时使用
+    if (!req.body.model && apiKey?.default_model) {
+      req.body.model = apiKey.default_model;
+    }
+    if (!req.body.model) {
+      res.status(400).json({
+        error: {
+          message: 'model is required (and no default_model is set on this API key)',
+          type: 'invalid_request_error',
+          code: 'MODEL_REQUIRED',
+        },
+      });
+      return;
+    }
+    const model: string = req.body.model;
+
     const accounts = await getAccountsByPriority('ai_neurons');
     if (accounts.length === 0) {
       res.status(503).json({
-        error: { message: 'No active accounts available', type: 'service_error', code: 'NO_ACCOUNTS' },
+        error: { message: 'No active accounts available (all may be exhausted today)', type: 'service_error', code: 'NO_ACCOUNTS' },
       });
       return;
     }
@@ -59,7 +82,7 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
           appLogger.warn(`[AI] Account ${account.name} neuron limit hit (4006)`);
           setQuota(account.id, 'ai_neurons', 10000);
           clearCache();
-          createAuditLog(account.id, 'ai_inference', req.body.model, '4006 neuron limit, switching', 'error');
+          createAuditLog(account.id, 'ai_inference', model, '4006 neuron limit, switching', 'error');
           if (accounts.indexOf(account) < accounts.length - 1) {
             lastError = errorText;
             continue;
@@ -98,19 +121,22 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
           } catch { /* client disconnected */ }
         }
         res.end();
-        createAuditLog(account.id, 'ai_inference', req.body.model, 'stream via /v1', 'success');
+        createAuditLog(account.id, 'ai_inference', model, 'stream via /v1', 'success');
+        // 流式拿不到 token 统计，只计 1 次请求
+        if (apiKey) incrementApiKeyUsage(apiKey.id, account.id, model, 0, 1);
       } else {
         const data = await cfResp.json() as any;
         res.json(data);
-        createAuditLog(account.id, 'ai_inference', req.body.model,
-          `tokens: ${data?.usage?.total_tokens || '?'}`, 'success');
+        const tokens = data?.usage?.total_tokens || 0;
+        createAuditLog(account.id, 'ai_inference', model, `tokens: ${tokens || '?'}`, 'success');
+        if (apiKey) incrementApiKeyUsage(apiKey.id, account.id, model, tokens, 1);
       }
       return;
     }
 
     res.status(429).json({
       error: {
-        message: 'All accounts have reached daily neuron limit',
+        message: lastError || 'All accounts have reached daily neuron limit',
         type: 'quota_exceeded',
         code: 'ALL_ACCOUNTS_EXHAUSTED',
       },

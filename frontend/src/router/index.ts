@@ -6,6 +6,7 @@ const routes = [
   { path: '/dns', name: 'dns', component: () => import('../views/DnsView.vue') },
   { path: '/workers', name: 'workers', component: () => import('../views/WorkersView.vue') },
   { path: '/ai', name: 'ai', component: () => import('../views/AiView.vue') },
+  { path: '/api-keys', name: 'api-keys', component: () => import('../views/ApiKeysView.vue') },
   { path: '/storage', name: 'storage', component: () => import('../views/StorageView.vue') },
   { path: '/browser-render', name: 'browser-render', component: () => import('../views/BrowserRenderView.vue') },
   { path: '/audit-log', name: 'audit-log', component: () => import('../views/AuditLogView.vue') },
