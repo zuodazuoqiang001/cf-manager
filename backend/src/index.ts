@@ -16,7 +16,7 @@ import tasksRouter from './routes/tasks';
 import openaiRouter from './routes/openai';
 import externalBrowserRenderRouter from './routes/externalBrowserRender';
 import { getQuotaSummary, syncUsageFromCloudflare } from './services/quotaTracker';
-import { getRecentLogs } from './models/auditLog';
+import { getRecentLogs, getLogs, countLogs } from './models/auditLog';
 import { initScheduler } from './services/taskScheduler';
 import { initBrowserRateLimiter } from './services/browserRateLimiter';
 import { v1RequestLogger } from './middleware/v1Logger';
@@ -59,9 +59,28 @@ app.get('/api/quota', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.get('/api/audit-log', (_req, res, next) => {
+app.get('/api/audit-log', (req, res, next) => {
   try {
-    res.json(getRecentLogs(20));
+    const limitRaw = parseInt(String(req.query.limit ?? '20'), 10);
+    const offsetRaw = parseInt(String(req.query.offset ?? '0'), 10);
+    const limit = Math.min(Math.max(isNaN(limitRaw) ? 20 : limitRaw, 1), 200);
+    const offset = Math.max(isNaN(offsetRaw) ? 0 : offsetRaw, 0);
+    const accountIdRaw = req.query.account_id;
+    let accountId: number | undefined;
+    if (accountIdRaw !== undefined && accountIdRaw !== '' && accountIdRaw !== 'null') {
+      const n = parseInt(String(accountIdRaw), 10);
+      if (!isNaN(n)) accountId = n;
+    }
+
+    // 兼容旧调用：不传任何参数时仍返回最近 20 条原数组（仪表盘重构后不再使用）
+    if (Object.keys(req.query).length === 0) {
+      res.json(getRecentLogs(20));
+      return;
+    }
+
+    const data = getLogs(limit, offset, accountId);
+    const total = countLogs(accountId);
+    res.json({ data, total, limit, offset });
   } catch (err) { next(err); }
 });
 

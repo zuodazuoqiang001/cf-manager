@@ -8,6 +8,7 @@ const routes = [
   { path: '/ai', name: 'ai', component: () => import('../views/AiView.vue') },
   { path: '/storage', name: 'storage', component: () => import('../views/StorageView.vue') },
   { path: '/browser-render', name: 'browser-render', component: () => import('../views/BrowserRenderView.vue') },
+  { path: '/audit-log', name: 'audit-log', component: () => import('../views/AuditLogView.vue') },
   { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
 ];
 

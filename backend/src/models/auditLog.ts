@@ -36,3 +36,41 @@ export function getRecentLogs(limit: number = 20): AuditLogWithName[] {
     )
     .all(limit) as AuditLogWithName[];
 }
+
+// 分页查询（可可选按账号筛选）
+export function getLogs(
+  limit: number = 20,
+  offset: number = 0,
+  accountId?: number
+): AuditLogWithName[] {
+  if (accountId !== undefined) {
+    return getDb()
+      .prepare(
+        `SELECT a.*, acc.name AS account_name
+         FROM audit_log a
+         LEFT JOIN accounts acc ON a.account_id = acc.id
+         WHERE a.account_id = ?
+         ORDER BY a.created_at DESC LIMIT ? OFFSET ?`
+      )
+      .all(accountId, limit, offset) as AuditLogWithName[];
+  }
+  return getDb()
+    .prepare(
+      `SELECT a.*, acc.name AS account_name
+       FROM audit_log a
+       LEFT JOIN accounts acc ON a.account_id = acc.id
+       ORDER BY a.created_at DESC LIMIT ? OFFSET ?`
+    )
+    .all(limit, offset) as AuditLogWithName[];
+}
+
+export function countLogs(accountId?: number): number {
+  if (accountId !== undefined) {
+    const row = getDb()
+      .prepare('SELECT COUNT(*) AS c FROM audit_log WHERE account_id = ?')
+      .get(accountId) as { c: number };
+    return row.c;
+  }
+  const row = getDb().prepare('SELECT COUNT(*) AS c FROM audit_log').get() as { c: number };
+  return row.c;
+}
