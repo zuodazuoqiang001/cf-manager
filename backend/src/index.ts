@@ -34,7 +34,8 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use(authMiddleware);
+// authMiddleware 仅作用于 /api 后台接口；/v1 由 v1AuthMiddleware 用 API Key 校验
+app.use('/api', authMiddleware);
 
 app.use('/api', apiRequestLogger);
 app.use('/api', responseWrapper);
