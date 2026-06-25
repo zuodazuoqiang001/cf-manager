@@ -9,6 +9,7 @@ import { v1AuthMiddleware } from '../middleware/v1Auth';
 import { proxyFetch } from '../services/proxyService';
 import { appLogger } from '../services/logger';
 import { convertResponsesRequest, convertChatCompletionToResponse, convertStreamToResponsesSSE } from '../services/responsesAdapter';
+import { logAiCall } from '../models/aiCallLog';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
     }
     const model: string = req.body.model;
 
+    const startTime = Date.now();
     const accounts = await getAccountsByPriority('ai_neurons');
     if (accounts.length === 0) {
       res.status(503).json({
@@ -105,6 +107,14 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
         res.status(cfResp.status).json({
           error: { message: errorText, type: 'upstream_error', code: cfResp.status },
         });
+        logAiCall({
+          apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+          accountId: account.id, accountName: account.name,
+          endpoint: '/v1/chat/completions', model,
+          requestBody: req.body, status: 'error',
+          errorMessage: errorText,
+          durationMs: Date.now() - startTime,
+        });
         return;
       }
 
@@ -137,12 +147,28 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
         createAuditLog(account.id, 'ai_inference', model, 'stream via /v1', 'success');
         // 流式拿不到 token 统计，只计 1 次请求
         if (apiKey) incrementApiKeyUsage(apiKey.id, account.id, model, 0, 1);
+        logAiCall({
+          apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+          accountId: account.id, accountName: account.name,
+          endpoint: '/v1/chat/completions', model,
+          requestBody: req.body, status: 'success',
+          durationMs: Date.now() - startTime,
+        });
       } else {
         const data = await cfResp.json() as any;
         res.json(data);
         const tokens = data?.usage?.total_tokens || 0;
         createAuditLog(account.id, 'ai_inference', model, `tokens: ${tokens || '?'}`, 'success');
         if (apiKey) incrementApiKeyUsage(apiKey.id, account.id, model, tokens, 1);
+        logAiCall({
+          apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+          accountId: account.id, accountName: account.name,
+          endpoint: '/v1/chat/completions', model,
+          requestBody: req.body, responseBody: data, status: 'success',
+          inputTokens: data?.usage?.prompt_tokens || 0,
+          outputTokens: data?.usage?.completion_tokens || 0,
+          durationMs: Date.now() - startTime,
+        });
       }
       return;
     }
@@ -153,6 +179,13 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
         type: 'quota_exceeded',
         code: 'ALL_ACCOUNTS_EXHAUSTED',
       },
+    });
+    logAiCall({
+      apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+      endpoint: '/v1/chat/completions', model,
+      requestBody: req.body, status: 'error',
+      errorMessage: lastError || 'All accounts exhausted',
+      durationMs: Date.now() - startTime,
     });
   } catch (err) { next(err); }
 });
@@ -183,6 +216,7 @@ router.post('/responses', async (req: Request, res: Response, next: NextFunction
     }
     const model: string = req.body.model;
 
+    const startTime = Date.now();
     // 转换 Responses 请求 → Chat Completions 请求
     const chatBody = convertResponsesRequest(req.body);
     const isStream = chatBody.stream === true;
@@ -233,6 +267,14 @@ router.post('/responses', async (req: Request, res: Response, next: NextFunction
         res.status(cfResp.status).json({
           error: { message: errorText, type: 'server_error', code: cfResp.status },
         });
+        logAiCall({
+          apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+          accountId: account.id, accountName: account.name,
+          endpoint: '/v1/responses', model,
+          requestBody: req.body, status: 'error',
+          errorMessage: errorText,
+          durationMs: Date.now() - startTime,
+        });
         return;
       }
 
@@ -250,6 +292,13 @@ router.post('/responses', async (req: Request, res: Response, next: NextFunction
         res.end();
         createAuditLog(account.id, 'ai_inference', model, 'stream via /v1/responses', 'success');
         if (apiKey) incrementApiKeyUsage(apiKey.id, account.id, model, 0, 1);
+        logAiCall({
+          apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+          accountId: account.id, accountName: account.name,
+          endpoint: '/v1/responses', model,
+          requestBody: req.body, status: 'success',
+          durationMs: Date.now() - startTime,
+        });
       } else {
         const data = await cfResp.json() as any;
         const responsesData = convertChatCompletionToResponse(data, model);
@@ -257,6 +306,15 @@ router.post('/responses', async (req: Request, res: Response, next: NextFunction
         const tokens = data?.usage?.total_tokens || 0;
         createAuditLog(account.id, 'ai_inference', model, `tokens: ${tokens || '?'}`, 'success');
         if (apiKey) incrementApiKeyUsage(apiKey.id, account.id, model, tokens, 1);
+        logAiCall({
+          apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+          accountId: account.id, accountName: account.name,
+          endpoint: '/v1/responses', model,
+          requestBody: req.body, responseBody: responsesData, status: 'success',
+          inputTokens: data?.usage?.prompt_tokens || 0,
+          outputTokens: data?.usage?.completion_tokens || 0,
+          durationMs: Date.now() - startTime,
+        });
       }
       return;
     }
@@ -267,6 +325,13 @@ router.post('/responses', async (req: Request, res: Response, next: NextFunction
         type: 'rate_limit_error',
         code: 'ALL_ACCOUNTS_EXHAUSTED',
       },
+    });
+    logAiCall({
+      apiKeyId: apiKey?.id, apiKeyName: apiKey?.name,
+      endpoint: '/v1/responses', model,
+      requestBody: req.body, status: 'error',
+      errorMessage: lastError || 'All accounts exhausted',
+      durationMs: Date.now() - startTime,
     });
   } catch (err) { next(err); }
 });

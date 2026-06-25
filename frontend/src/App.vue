@@ -120,7 +120,7 @@ import {
   SparklesOutline, ImageOutline, SettingsOutline,
   MenuOutline, SunnyOutline, MoonOutline, ServerOutline,
   CloseOutline, GridOutline, LogOutOutline,
-  DocumentTextOutline, KeyOutline,
+  DocumentTextOutline, KeyOutline, PulseOutline,
 } from '@vicons/ionicons5';
 import apiClient from './api/client';
 import { message as globalMessage } from './utils/discreteApi';
@@ -158,6 +158,7 @@ const navItems = [
   { label: '存储', key: 'storage', iconComponent: ServerOutline },
   { label: 'AI', key: 'ai', iconComponent: SparklesOutline },
   { label: 'API Key', key: 'api-keys', iconComponent: KeyOutline },
+    { label: '调用日志', key: 'ai-call-logs', iconComponent: PulseOutline },
   { label: '渲染', key: 'browser-render', iconComponent: ImageOutline },
   { label: '日志', key: 'audit-log', iconComponent: DocumentTextOutline },
   { label: '设置', key: 'settings', iconComponent: SettingsOutline },
@@ -277,6 +278,7 @@ const menuOptions = [
   { label: '存储管理', key: 'storage', icon: renderIcon(ServerOutline) },
   { label: 'AI 推理', key: 'ai', icon: renderIcon(SparklesOutline) },
   { label: 'API Key 管理', key: 'api-keys', icon: renderIcon(KeyOutline) },
+    { label: '调用日志', key: 'ai-call-logs', icon: renderIcon(PulseOutline) },
   { label: '浏览器渲染', key: 'browser-render', icon: renderIcon(ImageOutline) },
   { label: '操作日志', key: 'audit-log', icon: renderIcon(DocumentTextOutline) },
   { label: '设置', key: 'settings', icon: renderIcon(SettingsOutline) },

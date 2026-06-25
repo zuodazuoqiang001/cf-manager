@@ -97,6 +97,26 @@ export function initDb(): void {
       total_tokens    INTEGER DEFAULT 0,
       UNIQUE(api_key_id, date, account_id, model)
     );
+
+    CREATE TABLE IF NOT EXISTS ai_call_logs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key_id      INTEGER REFERENCES api_keys(id) ON DELETE SET NULL,
+      api_key_name    TEXT,
+      account_id      INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+      account_name    TEXT,
+      endpoint        TEXT NOT NULL,
+      model           TEXT NOT NULL,
+      request_summary TEXT,
+      response_summary TEXT,
+      status          TEXT NOT NULL DEFAULT 'success',
+      error_message   TEXT,
+      input_tokens    INTEGER DEFAULT 0,
+      output_tokens   INTEGER DEFAULT 0,
+      duration_ms     INTEGER DEFAULT 0,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_call_logs_created_at ON ai_call_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_call_logs_api_key_id ON ai_call_logs(api_key_id);
   `);
 
   const cols = db.prepare("PRAGMA table_info('accounts')").all() as { name: string }[];

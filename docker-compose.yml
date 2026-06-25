@@ -20,7 +20,7 @@ services:
       - PROXY_URL=${PROXY_URL:-}
       - DB_PATH=/app/data/cf-manager.db
     volumes:
-      - cf-data:/app/data
+      - ./data:/app/data
 
   frontend:
     build:
@@ -37,6 +37,3 @@ services:
     depends_on:
       - backend
 
-volumes:
-  cf-data:
-    driver: local
