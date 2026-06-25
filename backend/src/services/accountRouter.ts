@@ -60,6 +60,9 @@ export async function findAccountByDomain(domain: string): Promise<{ account: Ac
 
 const AI_NEURON_LIMIT = 10000;
 
+// round-robin 计数器：避免请求集中打同一个账号，触发 300 req/min 限制
+let rrCounter = 0;
+
 const RESOURCE_FEATURE_MAP: Record<ResourceType, AccountFeature> = {
   ai_neurons: 'ai',
   workers_requests: 'workers',
@@ -139,6 +142,8 @@ export async function getAccountsByPriority(resource: ResourceType): Promise<Acc
     return [];
   }
 
+  let sorted: Account[];
+
   if (resource === 'ai_neurons') {
     const usageResults = await Promise.all(
       accounts.map(async (account) => {
@@ -150,17 +155,29 @@ export async function getAccountsByPriority(resource: ResourceType): Promise<Acc
         }
       })
     );
-    return usageResults
+    sorted = usageResults
+      .filter(r => r.remaining > 0)
+      .sort((a, b) => b.remaining - a.remaining)
+      .map(r => r.account);
+  } else {
+    sorted = accounts
+      .map(account => ({ account, remaining: getAccountQuota(account.id, resource).remaining }))
       .filter(r => r.remaining > 0)
       .sort((a, b) => b.remaining - a.remaining)
       .map(r => r.account);
   }
 
-  return accounts
-    .map(account => ({ account, remaining: getAccountQuota(account.id, resource).remaining }))
-    .filter(r => r.remaining > 0)
-    .sort((a, b) => b.remaining - a.remaining)
-    .map(r => r.account);
+  // round-robin: 旋转数组起点，使每次请求的首选账号不同
+  // 既保持“优先额度多的”，又避免集中打同一个账号触发 300 req/min 限制
+  if (sorted.length > 1) {
+    const offset = rrCounter % sorted.length;
+    rrCounter = (rrCounter + 1) % sorted.length;
+    if (offset > 0) {
+      return [...sorted.slice(offset), ...sorted.slice(0, offset)];
+    }
+  }
+
+  return sorted;
 }
 
 export function clearCache(): void {

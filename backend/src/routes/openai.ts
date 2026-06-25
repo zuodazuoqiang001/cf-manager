@@ -19,6 +19,11 @@ function isNeuronLimitError(text: string): boolean {
   return text.includes('4006') || text.includes('daily free allocation') || text.includes('neuron limit');
 }
 
+/** 是否还有下一个账号可切换 */
+function hasNextAccount(accounts: any[], account: any): boolean {
+  return accounts.indexOf(account) < accounts.length - 1;
+}
+
 router.get('/models', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const account = await selectBestAccount('ai_neurons');
@@ -80,14 +85,21 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
         const errorText = await cfResp.text();
 
         if (isNeuronLimitError(errorText)) {
+          // 额度耗尽（4006）：硬标记，今日不再轮询该账号
           appLogger.warn(`[AI] Account ${account.name} neuron limit hit (4006)`);
           setQuota(account.id, 'ai_neurons', 10000);
           clearCache();
           createAuditLog(account.id, 'ai_inference', model, '4006 neuron limit, switching', 'error');
-          if (accounts.indexOf(account) < accounts.length - 1) {
+          if (hasNextAccount(accounts, account)) {
             lastError = errorText;
             continue;
           }
+        } else if (cfResp.status === 429 && hasNextAccount(accounts, account)) {
+          // 频率限制（429）：不硬标记，临时切换到下一个账号
+          appLogger.warn(`[AI] Account ${account.name} rate limited (429), switching`);
+          createAuditLog(account.id, 'ai_inference', model, '429 rate limited, switching', 'error');
+          lastError = errorText;
+          continue;
         }
 
         res.status(cfResp.status).json({
@@ -201,14 +213,21 @@ router.post('/responses', async (req: Request, res: Response, next: NextFunction
         const errorText = await cfResp.text();
 
         if (isNeuronLimitError(errorText)) {
+          // 额度耗尽（4006）：硬标记，今日不再轮询该账号
           appLogger.warn(`[AI] Account ${account.name} neuron limit hit (4006)`);
           setQuota(account.id, 'ai_neurons', 10000);
           clearCache();
           createAuditLog(account.id, 'ai_inference', model, '4006 neuron limit, switching', 'error');
-          if (accounts.indexOf(account) < accounts.length - 1) {
+          if (hasNextAccount(accounts, account)) {
             lastError = errorText;
             continue;
           }
+        } else if (cfResp.status === 429 && hasNextAccount(accounts, account)) {
+          // 频率限制（429）：不硬标记，临时切换到下一个账号
+          appLogger.warn(`[AI] Account ${account.name} rate limited (429), switching`);
+          createAuditLog(account.id, 'ai_inference', model, '429 rate limited, switching', 'error');
+          lastError = errorText;
+          continue;
         }
 
         res.status(cfResp.status).json({
