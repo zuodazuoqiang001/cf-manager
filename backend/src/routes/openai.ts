@@ -8,7 +8,7 @@ import { incrementApiKeyUsage } from '../models/apiKey';
 import { v1AuthMiddleware } from '../middleware/v1Auth';
 import { proxyFetch } from '../services/proxyService';
 import { appLogger } from '../services/logger';
-import { convertResponsesRequest, convertChatCompletionToResponse, convertStreamToResponsesSSE } from '../services/responsesAdapter';
+import { convertResponsesRequest, convertChatCompletionToResponse, convertStreamToResponsesSSE, extractTextContent } from '../services/responsesAdapter';
 import { logAiCall } from '../models/aiCallLog';
 
 const router = Router();
@@ -70,6 +70,15 @@ router.post('/chat/completions', async (req: Request, res: Response, next: NextF
 
     const isStream = req.body.stream === true;
     let lastError = '';
+
+    // 清理 messages: 确保所有 content 都是字符串（Codex 可能发送数组格式 content）
+    if (Array.isArray(req.body.messages)) {
+      for (const msg of req.body.messages) {
+        if (msg.content !== null && msg.content !== undefined && typeof msg.content !== 'string') {
+          msg.content = extractTextContent(msg.content);
+        }
+      }
+    }
 
     for (const account of accounts) {
       if (!account.account_id) continue;

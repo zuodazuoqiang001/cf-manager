@@ -162,11 +162,18 @@ export function convertResponsesRequest(body: any): Record<string, any> {
     chatBody.tool_choice = body.tool_choice;
   }
 
+  // Safeguard: 确保所有 message content 都是字符串（防止边缘情况导致数组透传）
+  for (const msg of messages) {
+    if (msg.content !== null && typeof msg.content !== 'string') {
+      msg.content = extractTextContent(msg.content);
+    }
+  }
+
   return chatBody;
 }
 
 /** 从 Responses content（可能是 string 或 array）中提取纯文本 */
-function extractTextContent(content: any): string {
+export function extractTextContent(content: any): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
