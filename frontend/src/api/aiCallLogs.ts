@@ -34,12 +34,12 @@ export interface AiCallLogStats {
 
 export const aiCallLogsApi = {
   list(params?: { limit?: number; offset?: number; api_key_id?: number; status?: string }) {
-    return apiClient.get<AiCallLogResult>('/api/ai-call-logs', { params });
+    return apiClient.get<AiCallLogResult>('/ai-call-logs', { params });
   },
   stats() {
-    return apiClient.get<AiCallLogStats>('/api/ai-call-logs/stats');
+    return apiClient.get<AiCallLogStats>('/ai-call-logs/stats');
   },
   clean(beforeDate?: string) {
-    return apiClient.delete<{ deleted: number }>('/api/ai-call-logs', { params: beforeDate ? { before_date: beforeDate } : {} });
+    return apiClient.delete<{ deleted: number }>('/ai-call-logs', { params: beforeDate ? { before_date: beforeDate } : {} });
   },
 };
