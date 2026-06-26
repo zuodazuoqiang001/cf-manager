@@ -58,6 +58,10 @@ export function convertResponsesRequest(body: any): Record<string, any> {
   }
 
   // input items → messages
+  // Responses API 的 input 可以是字符串或数组
+  if (typeof body.input === 'string') {
+    messages.push({ role: 'user', content: body.input });
+  }
   const input: ResponsesInputItem[] = Array.isArray(body.input) ? body.input : [];
   for (const item of input) {
     const itemType = item.type || 'message';
