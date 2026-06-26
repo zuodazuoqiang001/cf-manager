@@ -1,8 +1,7 @@
 import NodeCache from 'node-cache';
 import { getActiveAccounts, getActiveAccountsByFeature, Account, AccountFeature, hasFeature } from '../models/account';
 import { getCfClient } from './cfFactory';
-import { getAccountQuota, ResourceType } from './quotaTracker';
-import { getAiUsageToday } from './aiService';
+import { ResourceType } from './quotaTracker';
 import { getQuotaByAccount } from '../models/quotaUsage';
 import { appLogger } from './logger';
 
@@ -80,36 +79,14 @@ export async function selectBestAccount(resource: ResourceType): Promise<Account
     throw Object.assign(new Error('No active accounts'), { statusCode: 400, code: 'NO_ACCOUNTS' });
   }
 
-  let best = accounts[0];
-  let bestRemaining = -1;
-
-  if (resource === 'ai_neurons') {
-    const usageResults = await Promise.all(
-      accounts.map(async (account) => {
-        try {
-          const usage = await getAiUsageToday(account);
-          return { account, remaining: AI_NEURON_LIMIT - usage.totalNeurons };
-        } catch {
-          return { account, remaining: 0 };
-        }
-      })
-    );
-    for (const { account, remaining } of usageResults) {
-      if (remaining > bestRemaining) {
-        bestRemaining = remaining;
-        best = account;
-      }
-    }
-  } else {
-    for (const account of accounts) {
-      const { remaining } = getAccountQuota(account.id, resource);
-      if (remaining > bestRemaining) {
-        bestRemaining = remaining;
-        best = account;
-      }
-    }
+  // 过滤掉 4006 硬标记的账号
+  const available = filterExhausted(accounts, resource);
+  if (available.length === 0) {
+    throw Object.assign(new Error('All accounts exhausted'), { statusCode: 400, code: 'NO_ACCOUNTS' });
   }
 
+  // 返回第一个可用账号（selectBestAccount 用于列表查询等非推理场景，不需要轮转）
+  const best = available[0];
   quotaCache.set(cacheKey, { account: best });
   return best;
 }
@@ -136,48 +113,24 @@ export async function getAccountsByPriority(resource: ResourceType): Promise<Acc
   const allAccounts = feature ? getActiveAccountsByFeature(feature) : getActiveAccounts();
   if (allAccounts.length === 0) return [];
 
+  // 过滤掉 4006 硬标记的账号（本地 SQLite 查询，毫秒级）
   const accounts = filterExhausted(allAccounts, resource);
   if (accounts.length === 0) {
     appLogger.warn(`[Router] All ${allAccounts.length} accounts marked exhausted for ${resource} today`);
     return [];
   }
 
-  let sorted: Account[];
-
-  if (resource === 'ai_neurons') {
-    const usageResults = await Promise.all(
-      accounts.map(async (account) => {
-        try {
-          const usage = await getAiUsageToday(account);
-          return { account, remaining: AI_NEURON_LIMIT - usage.totalNeurons };
-        } catch {
-          return { account, remaining: 0 };
-        }
-      })
-    );
-    sorted = usageResults
-      .filter(r => r.remaining > 0)
-      .sort((a, b) => b.remaining - a.remaining)
-      .map(r => r.account);
-  } else {
-    sorted = accounts
-      .map(account => ({ account, remaining: getAccountQuota(account.id, resource).remaining }))
-      .filter(r => r.remaining > 0)
-      .sort((a, b) => b.remaining - a.remaining)
-      .map(r => r.account);
-  }
-
-  // round-robin: 旋转数组起点，使每次请求的首选账号不同
-  // 既保持“优先额度多的”，又避免集中打同一个账号触发 300 req/min 限制
-  if (sorted.length > 1) {
-    const offset = rrCounter % sorted.length;
-    rrCounter = (rrCounter + 1) % sorted.length;
+  // round-robin: 旋转数组起点，均匀分散请求到各账号，避免集中触发 300 req/min 限制
+  // 不再每次请求查 Cloudflare GraphQL 额度，额度数据由仪表盘 /api/quota 按需刷新
+  if (accounts.length > 1) {
+    const offset = rrCounter % accounts.length;
+    rrCounter = (rrCounter + 1) % accounts.length;
     if (offset > 0) {
-      return [...sorted.slice(offset), ...sorted.slice(0, offset)];
+      return [...accounts.slice(offset), ...accounts.slice(0, offset)];
     }
   }
 
-  return sorted;
+  return accounts;
 }
 
 export function clearCache(): void {
