@@ -113,24 +113,52 @@ export function convertResponsesRequest(body: any): Record<string, any> {
   if (body.stop) chatBody.stop = body.stop;
 
   // tools 转换: Responses 格式 → Chat Completions 格式
+  // Chat Completions API 仅支持 { type: 'function', function: {...} } 格式
+  // 需过滤掉 namespace、web_search 等不支持的类型
   if (Array.isArray(body.tools) && body.tools.length > 0) {
-    chatBody.tools = body.tools.map((t: any) => {
-      if (t.type === 'function') {
-        return {
-          type: 'function',
-          function: {
-            name: t.name,
-            description: t.description || '',
-            parameters: t.parameters || { type: 'object', properties: {} },
-          },
-        };
+    const convertedTools: any[] = [];
+    for (const t of body.tools) {
+      // 已经是 Chat Completions 格式（有 function 字段）
+      if (t.function) {
+        convertedTools.push(t);
+        continue;
       }
-      return t; // 透传其他类型
-    });
+      // Responses API 的 function 工具：name 直接在工具上
+      // 也处理无 type 但有 name 的兜底情况
+      if (t.type === 'function' || (!t.type && t.name && !t.tools)) {
+        const fn: any = {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.parameters || { type: 'object', properties: {} },
+        };
+        if (t.strict !== undefined) fn.strict = t.strict;
+        convertedTools.push({ type: 'function', function: fn });
+        continue;
+      }
+      // namespace 工具（如 multi_agent_v1）：尝试展平嵌套的 function 工具
+      if (t.tools && Array.isArray(t.tools)) {
+        for (const sub of t.tools) {
+          if (sub.type === 'function' || (sub.name && !sub.tools)) {
+            const fn: any = {
+              name: sub.name,
+              description: sub.description || '',
+              parameters: sub.parameters || { type: 'object', properties: {} },
+            };
+            if (sub.strict !== undefined) fn.strict = sub.strict;
+            convertedTools.push({ type: 'function', function: fn });
+          }
+        }
+        continue;
+      }
+      // 跳过不支持的类型：web_search、code_interpreter、file_search 等
+    }
+    if (convertedTools.length > 0) {
+      chatBody.tools = convertedTools;
+    }
   }
 
-  // tool_choice 透传
-  if (body.tool_choice !== undefined) {
+  // tool_choice 透传（仅在有可用工具时）
+  if (body.tool_choice !== undefined && chatBody.tools) {
     chatBody.tool_choice = body.tool_choice;
   }
 
