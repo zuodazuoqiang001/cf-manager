@@ -24,14 +24,22 @@ const RESOURCE_FEATURE: Record<ResourceType, AccountFeature> = {
 
 export async function syncUsageFromCloudflare(): Promise<void> {
   const accounts = getActiveAccounts();
+  const today = new Date().toISOString().split('T')[0];
 
   await Promise.all(accounts.map(async (account) => {
     if (hasFeature(account, 'ai')) {
-      try {
-        const aiUsage = await getAiUsageToday(account);
-        setQuota(account.id, 'ai_neurons', Math.round(aiUsage.totalNeurons));
-      } catch (e) {
-        appLogger.error(`[Sync] AI usage failed for ${account.name}: ${e}`);
+      // 如果账号已被 4006 硬标记（count >= limit），不覆盖
+      // Cloudflare analytics 可能与实际 enforcement 不一致，以 4006 为准
+      const existing = getQuotaByAccount(account.id, 'ai_neurons', today);
+      if (existing && existing.count >= LIMITS.ai_neurons) {
+        // 已硬标记，跳过同步
+      } else {
+        try {
+          const aiUsage = await getAiUsageToday(account);
+          setQuota(account.id, 'ai_neurons', Math.round(aiUsage.totalNeurons));
+        } catch (e) {
+          appLogger.error(`[Sync] AI usage failed for ${account.name}: ${e}`);
+        }
       }
     }
 
