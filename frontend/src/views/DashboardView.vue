@@ -7,7 +7,7 @@
     </n-space>
 
     <n-spin :show="quotaStore.loading" style="margin-top: 16px">
-      <!-- 顶部汇总卡：按资源聚合 -->
+      <!-- 顶部汇总卡：AI神经元 -->
       <n-grid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
         <n-gi v-for="r in summary" :key="r.resource" span="3 s:3 m:1">
           <n-card size="small">
@@ -30,21 +30,31 @@
         </n-gi>
       </n-grid>
 
-      <!-- 中部账号列表 -->
+      <!-- 账号额度列表：3列卡片 -->
       <n-h3 style="margin-top: 24px">账号额度列表</n-h3>
-      <n-data-table
-        :columns="columns"
-        :data="quotaWithResources"
-        :loading="quotaStore.loading"
-        :row-key="(row: any) => row.accountId"
-        :row-props="rowProps"
-        size="small"
-        :bordered="false"
-        :scroll-x="900"
-      />
+      <n-grid :cols="3" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
+        <n-gi v-for="acct in aiAccounts" :key="acct.accountId" span="3 s:3 m:1">
+          <n-card size="small" hoverable style="cursor: pointer" @click="openDrawer(acct)">
+            <n-space vertical :size="8">
+              <n-space align="center" justify="space-between">
+                <n-text strong>{{ acct.accountName }}</n-text>
+                <n-tag size="small" :type="percentTagType(getAiPercentage(acct))">{{ getAiPercentage(acct) }}%</n-tag>
+              </n-space>
+              <n-progress
+                type="line"
+                :percentage="getAiPercentage(acct)"
+                :height="12"
+                :show-indicator="false"
+                :status="percentStatus(getAiPercentage(acct))"
+              />
+              <n-text depth="3" style="font-size: 12px">{{ getAiUsageText(acct) }}</n-text>
+            </n-space>
+          </n-card>
+        </n-gi>
+      </n-grid>
       <n-empty
-        v-if="!quotaStore.loading && quotaWithResources.length === 0"
-        description="暂无账户数据"
+        v-if="!quotaStore.loading && aiAccounts.length === 0"
+        description="暂无数据，点击「刷新」获取额度"
         style="margin-top: 16px"
       />
     </n-spin>
@@ -55,7 +65,7 @@
         <div v-if="currentAccount">
           <n-text depth="3" style="font-size: 12px">账号 ID: {{ currentAccount.accountId }}</n-text>
           <n-divider style="margin: 12px 0" />
-          <div v-for="r in currentAccount.resources" :key="r.resource" style="margin-bottom: 18px">
+          <div v-for="r in currentAccountAiResources" :key="r.resource" style="margin-bottom: 18px">
             <n-space align="center" justify="space-between" style="margin-bottom: 6px">
               <n-text strong>{{ resourceLabel(r.resource) }}</n-text>
               <n-tag size="small" :type="percentTagType(calcPercentage(r))">{{ calcPercentage(r) }}%</n-tag>
@@ -67,11 +77,11 @@
               :status="percentStatus(calcPercentage(r))"
             />
             <n-text depth="3" style="font-size: 12px; display: block; margin-top: 4px">
-              已用 {{ formatNumber(r.resource, r.count) }} / 上限 {{ formatNumber(r.resource, r.limit) }}
-              （剩余 {{ formatNumber(r.resource, r.remaining ?? r.limit - r.count) }}）
+              已用 {{ formatNumber(r.count) }} / 上限 {{ formatNumber(r.limit) }}
+              （剩余 {{ formatNumber(r.remaining ?? r.limit - r.count) }}）
             </n-text>
           </div>
-          <n-empty v-if="!currentAccount.resources?.length" description="暂无额度数据" />
+          <n-empty v-if="!currentAccountAiResources?.length" description="暂无额度数据" />
         </div>
       </n-drawer-content>
     </n-drawer>
@@ -79,22 +89,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue';
+import { ref, computed } from 'vue';
 import { useQuotaStore } from '../stores/quotaStore';
-import { NProgress, NText, NSpace } from 'naive-ui';
-import type { DataTableColumns } from 'naive-ui';
 
 const quotaStore = useQuotaStore();
 
 const resourceLabels: Record<string, string> = {
-  workers_requests: 'Workers 请求',
   ai_neurons: 'AI 神经元',
-  browser_render_seconds: '浏览器渲染',
 };
-const resourceOrder = ['workers_requests', 'ai_neurons', 'browser_render_seconds'];
+const resourceOrder = ['ai_neurons'];
 
-const quotaWithResources = computed(() =>
-  quotaStore.quota.filter((acct: any) => acct.resources && acct.resources.length > 0)
+// 只保留有 AI 神经元资源的账号
+const aiAccounts = computed(() =>
+  quotaStore.quota.filter((acct: any) =>
+    acct.resources?.some((r: any) => r.resource === 'ai_neurons')
+  )
 );
 
 // 按资源维度聚合所有账号
@@ -103,7 +112,7 @@ const summary = computed(() => {
     let count = 0;
     let limit = 0;
     let accountCount = 0;
-    for (const acct of quotaWithResources.value) {
+    for (const acct of aiAccounts.value) {
       const r = acct.resources.find((x: any) => x.resource === resource);
       if (r) {
         count += r.count || 0;
@@ -120,18 +129,12 @@ function resourceLabel(resource: string) {
   return resourceLabels[resource] || resource;
 }
 
-function formatNumber(resource: string, value: number) {
-  if (resource === 'browser_render_seconds') {
-    const v = Math.round(value || 0);
-    const m = Math.floor(v / 60);
-    const s = v % 60;
-    return m > 0 ? `${m}分${s}秒` : `${s}秒`;
-  }
+function formatNumber(value: number) {
   return (value || 0).toLocaleString();
 }
 
 function formatValue(r: any) {
-  return `${formatNumber(r.resource, r.count)} / ${formatNumber(r.resource, r.limit)}`;
+  return `${formatNumber(r.count)} / ${formatNumber(r.limit)}`;
 }
 
 function calcPercentage(r: any) {
@@ -148,47 +151,24 @@ function percentTagType(p: number): 'success' | 'warning' | 'error' {
   return percentStatus(p);
 }
 
-// 列：账号名 + 各资源
-const columns = computed<DataTableColumns<any>>(() => {
-  const base: DataTableColumns<any> = [
-    {
-      title: '账号',
-      key: 'accountName',
-      width: 180,
-      fixed: 'left',
-      render: (row: any) => row.accountName || '-',
-    },
-  ];
-  for (const resource of resourceOrder) {
-    base.push({
-      title: resourceLabel(resource),
-      key: resource,
-      minWidth: 220,
-      render: (row: any) => {
-        const r = row.resources?.find((x: any) => x.resource === resource);
-        if (!r) {
-          return h(NText, { depth: 3, style: 'font-size: 12px' }, { default: () => '-' });
-        }
-        const p = calcPercentage(r);
-        return h(NSpace, { vertical: true, size: 4 }, {
-          default: () => [
-            h(NText, { depth: 3, style: 'font-size: 12px' }, { default: () => formatValue(r) }),
-            h(NProgress, {
-              type: 'line',
-              percentage: p,
-              height: 8,
-              showIndicator: false,
-              status: percentStatus(p),
-            }),
-          ],
-        });
-      },
-    });
-  }
-  return base;
-});
+// 获取账号的 AI 神经元资源
+function getAiResource(acct: any) {
+  return acct.resources?.find((r: any) => r.resource === 'ai_neurons');
+}
 
-// 行点击 → 抽屉
+function getAiPercentage(acct: any) {
+  const r = getAiResource(acct);
+  return r ? calcPercentage(r) : 0;
+}
+
+function getAiUsageText(acct: any) {
+  const r = getAiResource(acct);
+  if (!r) return '-';
+  const remaining = r.remaining ?? (r.limit - r.count);
+  return `已用 ${formatNumber(r.count)} / 上限 ${formatNumber(r.limit)}（剩余 ${formatNumber(remaining)}）`;
+}
+
+// 抽屉
 const drawerVisible = ref(false);
 const currentAccount = ref<any>(null);
 const drawerWidth = computed(() => {
@@ -196,17 +176,13 @@ const drawerWidth = computed(() => {
   return Math.min(520, Math.max(360, window.innerWidth - 80));
 });
 
-function rowProps(row: any) {
-  return {
-    style: 'cursor: pointer',
-    onClick: () => {
-      currentAccount.value = row;
-      drawerVisible.value = true;
-    },
-  };
-}
-
-onMounted(() => {
-  quotaStore.fetchQuota();
+const currentAccountAiResources = computed(() => {
+  if (!currentAccount.value) return [];
+  return currentAccount.value.resources?.filter((r: any) => r.resource === 'ai_neurons') || [];
 });
+
+function openDrawer(acct: any) {
+  currentAccount.value = acct;
+  drawerVisible.value = true;
+}
 </script>
