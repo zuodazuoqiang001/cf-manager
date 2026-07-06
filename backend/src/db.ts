@@ -123,6 +123,9 @@ export function initDb(): void {
   if (!cols.find(c => c.name === 'enabled_features')) {
     db.exec("ALTER TABLE accounts ADD COLUMN enabled_features TEXT DEFAULT 'ai,workers,browser_render,dns,storage'");
   }
+  if (!cols.find(c => c.name === 'source')) {
+    db.exec("ALTER TABLE accounts ADD COLUMN source TEXT DEFAULT 'manual'");
+  }
 }
 
 export function getSetting(key: string): string | undefined {

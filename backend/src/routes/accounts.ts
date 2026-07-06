@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { getAllAccounts, createAccount, deleteAccount, getAccountById, updateAccountStatus, updateAccountId, updateAccountFeatures, AccountInput } from '../models/account';
+import { getAllAccounts, createAccount, deleteAccount, getAccountById, getAccountByAccountId, updateAccountStatus, updateAccountId, updateAccountFeatures, AccountInput } from '../models/account';
 import { encrypt } from '../services/encryptionService';
 import { getCfClient } from '../services/cfFactory';
 import { getQuotaSummary } from '../services/quotaTracker';
@@ -74,6 +74,61 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     createAuditLog(id, 'create_account', name, `auth_type=${auth_type}`, 'success');
     res.status(201).json({ id, ...input, api_token: '***', api_key: '***' });
+  } catch (err) { next(err); }
+});
+
+router.post('/import', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { accounts } = req.body;
+    if (!Array.isArray(accounts)) {
+      res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'accounts array is required' } });
+      return;
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const item of accounts) {
+      // 只导入 COMPLETED 状态的账号
+      if (item.status !== 'COMPLETED') {
+        skipped++;
+        continue;
+      }
+      // 必须有 apiKey 和 accountId
+      if (!item.apiKey || !item.accountId) {
+        skipped++;
+        continue;
+      }
+      // 跳过重复（按 accountId 判断）
+      const existing = getAccountByAccountId(item.accountId);
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const id = createAccount({
+          name: item.email || item.accountId,
+          auth_type: 'token',
+          api_token: encrypt(item.apiKey),
+          account_id: item.accountId,
+          email: item.email || null,
+          enabled_features: 'ai',
+          source: 'imported',
+        });
+        // 导入的账号直接标记为活跃
+        updateAccountStatus(id, true);
+        createAuditLog(id, 'import_account', item.email || item.accountId, 'batch import', 'success');
+        imported++;
+      } catch (e: any) {
+        errors.push(`${item.email || item.accountId}: ${e.message}`);
+      }
+    }
+
+    if (imported > 0) clearCache();
+    appLogger.info(`[Import] Batch import: ${imported} imported, ${skipped} skipped, ${errors.length} errors`);
+    res.status(201).json({ imported, skipped, errors });
   } catch (err) { next(err); }
 });
 

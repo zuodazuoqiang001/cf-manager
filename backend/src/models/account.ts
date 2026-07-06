@@ -14,6 +14,7 @@ export interface Account {
   account_id: string | null;
   is_active: number;
   enabled_features: string;
+  source: 'manual' | 'imported';
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,7 @@ export interface AccountInput {
   email?: string;
   account_id?: string;
   enabled_features?: string;
+  source?: 'manual' | 'imported';
 }
 
 export function hasFeature(account: Account, feature: AccountFeature): boolean {
@@ -51,8 +53,9 @@ export function getAccountById(id: number): Account | undefined {
 
 export function createAccount(input: AccountInput): number {
   const features = input.enabled_features || ALL_FEATURES.join(',');
+  const source = input.source || 'manual';
   const stmt = getDb().prepare(
-    'INSERT INTO accounts (name, auth_type, api_token, api_key, email, account_id, enabled_features) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO accounts (name, auth_type, api_token, api_key, email, account_id, enabled_features, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const result = stmt.run(
     input.name,
@@ -61,9 +64,14 @@ export function createAccount(input: AccountInput): number {
     input.api_key || null,
     input.email || null,
     input.account_id || null,
-    features
+    features,
+    source
   );
   return result.lastInsertRowid as number;
+}
+
+export function getAccountByAccountId(accountId: string): Account | undefined {
+  return getDb().prepare('SELECT * FROM accounts WHERE account_id = ?').get(accountId) as Account | undefined;
 }
 
 export function updateAccountFeatures(id: number, features: string): void {

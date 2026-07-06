@@ -26,6 +26,12 @@ export const useAccountStore = defineStore('accounts', () => {
     await fetchAccounts();
   }
 
+  async function batchImport(accounts: any[]) {
+    const { data } = await accountsApi.batchImport(accounts);
+    await fetchAccounts();
+    return data as { imported: number; skipped: number; errors: string[] };
+  }
+
   async function deleteAccount(id: number) {
     await accountsApi.delete(id);
     await fetchAccounts();
@@ -41,5 +47,5 @@ export const useAccountStore = defineStore('accounts', () => {
     await fetchAccounts();
   }
 
-  return { accounts, quota, loading, fetchAccounts, createAccount, deleteAccount, testAccount, updateFeatures };
+  return { accounts, quota, loading, fetchAccounts, createAccount, batchImport, deleteAccount, testAccount, updateFeatures };
 });
