@@ -4,6 +4,7 @@
       <n-h2 style="margin: 0">仪表盘</n-h2>
       <n-tag size="small" type="info">今日额度</n-tag>
       <n-button size="small" tertiary @click="quotaStore.fetchQuota()">刷新</n-button>
+      <n-text v-if="lastUpdatedText" depth="3" style="font-size: 12px">{{ lastUpdatedText }}</n-text>
     </n-space>
 
     <n-spin :show="quotaStore.loading" style="margin-top: 16px">
@@ -179,6 +180,14 @@ const drawerWidth = computed(() => {
 const currentAccountAiResources = computed(() => {
   if (!currentAccount.value) return [];
   return currentAccount.value.resources?.filter((r: any) => r.resource === 'ai_neurons') || [];
+});
+
+const lastUpdatedText = computed(() => {
+  if (!quotaStore.lastUpdated) return '';
+  const d = new Date(quotaStore.lastUpdated);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `最后更新 ${hh}:${mm}`;
 });
 
 function openDrawer(acct: any) {
