@@ -95,8 +95,8 @@ router.post('/import', async (req: Request, res: Response, next: NextFunction) =
         skipped++;
         continue;
       }
-      // 必须有 apiKey 和 accountId
-      if (!item.apiKey || !item.accountId) {
+      // 必须有 apiKey、accountId 和 email
+      if (!item.apiKey || !item.accountId || !item.email) {
         skipped++;
         continue;
       }
@@ -108,12 +108,13 @@ router.post('/import', async (req: Request, res: Response, next: NextFunction) =
       }
 
       try {
+        // cfk_ 前缀是 Cloudflare Global API Key，使用 global_key 认证方式
         const id = createAccount({
-          name: item.email || item.accountId,
-          auth_type: 'token',
-          api_token: encrypt(item.apiKey),
+          name: item.email,
+          auth_type: 'global_key',
+          api_key: encrypt(item.apiKey),
+          email: item.email,
           account_id: item.accountId,
-          email: item.email || null,
           enabled_features: 'ai',
           source: 'imported',
         });
